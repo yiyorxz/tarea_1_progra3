@@ -1,12 +1,19 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
-from . import models, schemas
-from .database import engine, Base, get_db
-from .logica import encolar_mision, desencolar_mision, reconstruir_cola
+import models, schemas
+from database import SessionLocal, engine
+import logica
 
-Base.metadata.create_all(bind=engine)
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 @app.post("/personajes")
 def crear_personaje(personaje: schemas.PersonajeCreate, db: Session = Depends(get_db)):
@@ -24,27 +31,19 @@ def crear_mision(mision: schemas.MisionCreate, db: Session = Depends(get_db)):
     db.refresh(db_mision)
     return db_mision
 
-@app.post("/personajes/{id}/misiones/{mision_id}")
-def aceptar_mision(id: int, mision_id: int, db: Session = Depends(get_db)):
-    return encolar_mision(db, id, mision_id)
+@app.post("/personajes/{personaje_id}/misiones/{mision_id}")
+def aceptar(personaje_id: int, mision_id: int, db: Session = Depends(get_db)):
+    logica.aceptar_mision(db, personaje_id, mision_id)
+    return {"mensaje": "Misión aceptada"}
 
-@app.post("/personajes/{id}/completar")
-def completar_mision(id: int, db: Session = Depends(get_db)):
-    mision_id = desencolar_mision(db, id)
-    if mision_id is None:
-        raise HTTPException(status_code=404, detail="No hay misiones para completar")
+@app.post("/personajes/{personaje_id}/completar")
+def completar(personaje_id: int, db: Session = Depends(get_db)):
+    mision = logica.completar_mision(db, personaje_id)
+    if not mision:
+        raise HTTPException(status_code=404, detail="No hay misiones")
+    return {"mensaje": f"Misión '{mision.descripcion}' completada", "xp_ganado": mision.xp}
 
-    mision = db.query(models.Mision).get(mision_id)
-    personaje = db.query(models.Personaje).get(id)
-    personaje.experiencia += mision.experiencia
-    db.commit()
-    return {"mensaje": f"Misión '{mision.titulo}' completada", "xp_ganada": mision.experiencia}
-
-@app.get("/personajes/{id}/misiones")
-def listar_misiones(id: int, db: Session = Depends(get_db)):
-    cola = reconstruir_cola(id, db)
-    misiones = []
-    for mision_id in cola.to_list():
-        mision = db.query(models.Mision).get(mision_id)
-        misiones.append(mision)
-    return misiones
+@app.get("/personajes/{personaje_id}/misiones")
+def listar_misiones(personaje_id: int, db: Session = Depends(get_db)):
+    misiones = logica.obtener_misiones(db, personaje_id)
+    return [m.descripcion for m in misiones]

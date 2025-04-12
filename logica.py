@@ -1,29 +1,52 @@
-from .cola import Cola
-from .models import PersonajeMision
 from sqlalchemy.orm import Session
+from models import Personaje, Mision, PersonajeMision
+from cola import Cola
 
-def reconstruir_cola(personaje_id: int, db: Session):
+def aceptar_mision(db: Session, personaje_id: int, mision_id: int):
+    personaje = db.query(Personaje).get(personaje_id)
     cola = Cola()
-    relaciones = db.query(PersonajeMision).filter_by(personaje_id=personaje_id).order_by(PersonajeMision.id).all()
-    for rel in relaciones:
-        cola.enqueue(rel.mision_id)
-    return cola
 
-def encolar_mision(db: Session, personaje_id: int, mision_id: int):
-    nueva_rel = PersonajeMision(personaje_id=personaje_id, mision_id=mision_id)
-    db.add(nueva_rel)
+    # Cargar misiones actuales
+    misiones_actuales = (
+        db.query(PersonajeMision)
+        .filter_by(personaje_id=personaje_id)
+        .order_by(PersonajeMision.orden)
+        .all()
+    )
+    for pm in misiones_actuales:
+        cola.enqueue(pm)
+
+    nuevo_orden = cola.size() + 1
+    nueva_mision = PersonajeMision(personaje_id=personaje_id, mision_id=mision_id, orden=nuevo_orden)
+    db.add(nueva_mision)
     db.commit()
-    db.refresh(nueva_rel)
-    return nueva_rel
 
-def desencolar_mision(db: Session, personaje_id: int):
-    cola = reconstruir_cola(personaje_id, db)
-    mision_id = cola.dequeue()
-    if mision_id is None:
+
+def completar_mision(db: Session, personaje_id: int):
+    misiones = (
+        db.query(PersonajeMision)
+        .filter_by(personaje_id=personaje_id)
+        .order_by(PersonajeMision.orden)
+        .all()
+    )
+    if not misiones:
         return None
 
-    relacion = db.query(PersonajeMision).filter_by(personaje_id=personaje_id, mision_id=mision_id).first()
-    if relacion:
-        db.delete(relacion)
-        db.commit()
-    return mision_id
+    primera = misiones[0]
+    personaje = db.query(Personaje).get(personaje_id)
+    mision = db.query(Mision).get(primera.mision_id)
+
+    personaje.xp += mision.xp
+    db.delete(primera)
+    db.commit()
+    return mision
+
+
+def obtener_misiones(db: Session, personaje_id: int):
+    misiones = (
+        db.query(PersonajeMision)
+        .filter_by(personaje_id=personaje_id)
+        .order_by(PersonajeMision.orden)
+        .all()
+    )
+    return [db.query(Mision).get(pm.mision_id) for pm in misiones]

@@ -6,9 +6,9 @@ class Cola:
         self.items.append(item)
 
     def dequeue(self):
-        if self.is_empty():
-            return None
-        return self.items.pop(0)
+        if not self.is_empty():
+            return self.items.pop(0)
+        return None
 
     def first(self):
         return self.items[0] if not self.is_empty() else None
@@ -18,6 +18,3 @@ class Cola:
 
     def size(self):
         return len(self.items)
-
-    def to_list(self):
-        return self.items.copy()
